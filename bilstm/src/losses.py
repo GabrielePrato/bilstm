@@ -72,7 +72,8 @@ class LSTMLosses(nn.Module):
             start += (seq_len + 2)  # add 1 because of column of 0
 
         cum_seq_lens = [0]
-        cum_seq_lens.extend([int(k) for k in torch.cumsum(torch.FloatTensor(seq_lens), 0)])
+        # Modified Long float to solve type error
+        cum_seq_lens.extend([int(k) for k in torch.cumsum(torch.LongTensor(seq_lens), 0)])
 
         for i, seq_len in enumerate(seq_lens):
 

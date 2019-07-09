@@ -226,19 +226,22 @@ def train(train_params, dataloaders, cuda, batch_first, epoch_params):
             print("iteration %d took %.2f secs" % (n_iter, time.time() - tic))
 
             print("\033[4;32miter %d\033[0m" % n_iter)
+            # Removing the [0] to avoid error from all
             print("\033[1;34mTotal loss: %.3f ||| LSTM loss: %.3f ||| Contr. loss: %.3f\033[0m" %
-                  (loss.data[0], lstm_loss.data[0], cont_loss.data[0]))
+                  (loss.data, lstm_loss.data, cont_loss.data))
             print("Seq lens:", [len(b['texts']) for b in batch])
 
             dists = torch.sum(1 - F.cosine_similarity(im_feats, txt_feats))/im_feats.size()[0]
-            print("\033[0;31mmdists: %.3f\033[0m" % dists.data[0])
+            # Removing the [0] to avoid error from all
+            print("\033[0;31mmdists: %.3f\033[0m" % dists.data)
 
-            write_data = {'data/loss': loss.data[0],
-                          'data/lstm_loss': lstm_loss.data[0],
-                          'data/cont_loss': cont_loss.data[0],
-                          'data/pos_dists': dists.data[0],
-                          'grads/im_feats': torch.mean(torch.cat([torch.norm(t)
-                                                                  for t in GRADS['im_feats']]))}
+            # Removing the [0] to avoid error from all
+            write_data = {'data/loss': loss.data,
+                          'data/lstm_loss': lstm_loss.data,
+                          'data/cont_loss': cont_loss.data,
+                          'data/pos_dists': dists.data,}
+                          #'grads/im_feats': torch.mean(torch.cat([torch.norm(t)
+                           #                                       for t in GRADS['im_feats']]))}
             write_tensorboard(writer, write_data, n_iter)
 
             n_iter += 1

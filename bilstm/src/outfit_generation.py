@@ -43,8 +43,10 @@ def run_forward_lstm(model, prev_prod, answers_feats, data_dict, zero_idx, cuda)
         pred = predict_single_direction(torch.autograd.Variable(fw_hidden),
                                         torch.autograd.Variable(answers_feats),
                                         zero_idx)
-        max_prob_img = data_dict.keys()[pred[0].data[0]]
-        zero_prob = pred[2].data[0]
+        # Added list beacuse in python3 keys() is not subscriptable
+        max_prob_img = list(data_dict.keys())[pred[0].data[0]]
+        # removed the [0] to solve o dim index
+        zero_prob = pred[2].data
         if max_prob_img == 'zeros' or zero_prob > 0.00005:
             break
 
@@ -64,8 +66,10 @@ def run_backward_lstm(model, next_prod, answers_feats, data_dict, zero_idx, cuda
         pred = predict_single_direction(torch.autograd.Variable(bw_hidden),
                                         torch.autograd.Variable(answers_feats),
                                         zero_idx)
-        max_prob_img = data_dict.keys()[pred[0].data[0]]
-        zero_prob = pred[2].data[0]
+        # removed the [0] to solve o dim index, added list for non subscriptable
+        max_prob_img = list(data_dict.keys())[pred[0].data]
+        # removed the [0] to solve o dim index
+        zero_prob = pred[2].data
         if max_prob_img == 'zeros' or zero_prob > 0.00005:
             break
 
@@ -90,7 +94,8 @@ def run_fill_lstm(model, start_feats, end_feats, num_blank, answers_feats, data_
         pred = predict_single_direction(torch.autograd.Variable(fw_hidden),
                                         torch.autograd.Variable(answers_feats),
                                         zero_idx)
-        max_prob_img = data_dict.keys()[pred[0].data[0]]
+        # Added list for non subscriptable
+        max_prob_img = list(data_dict.keys())[pred[0].data[0]]
         forward_seq.append(max_prob_img)
         new_prod = answers_feats[pred[0].data[0]].unsqueeze(0)
         if cuda:
@@ -106,8 +111,10 @@ def run_fill_lstm(model, start_feats, end_feats, num_blank, answers_feats, data_
         pred = predict_single_direction(torch.autograd.Variable(bw_hidden),
                                         torch.autograd.Variable(answers_feats),
                                         zero_idx)
-        max_prob_img = data_dict.keys()[pred[0].data[0]]
-        zero_prob = pred[2].data[0]
+        # Added list for non subscriptable, removed [0]
+        max_prob_img = list(data_dict.keys())[pred[0].data]
+        # Removed the [0]
+        zero_prob = pred[2].data
         if max_prob_img == 'zeros' or zero_prob > 0.00005:
             break
 
@@ -123,7 +130,8 @@ def run_fill_lstm(model, start_feats, end_feats, num_blank, answers_feats, data_
     blank_scores = torch.nn.functional.log_softmax(torch.autograd.Variable(torch.mm(
                                              hiddens, answers_feats.permute(1, 0))), dim=1)
     _, blank_idxs = torch.max(blank_scores, 1)
-    blank_imgs = [data_dict.keys()[idx.data[0]] for idx in blank_idxs]
+    #Added list and removed [0]
+    blank_imgs = [list(data_dict.keys())[idx.data] for idx in blank_idxs]
     return blank_imgs
 
 def predict_single_direction(ht, feats, zero_pos):
@@ -155,13 +163,16 @@ def nn_search(img, text_feat, data_dict, answers_feats, cuda, balance_factor = 2
 # pylint: disable= R0914
 def main(model_name, model_type, feats_name, img_savepath, query_file, vocab_file, cuda):
     """Main function."""
-    queries = json.load(open(query_file))
-    vocab = json.load(open(vocab_file))
+    with open(query_file) as json_file:
+        queries = json.load(json_file)
+    with open(vocab_file) as json_file:
+        vocab = json.load(open(vocab_file))
 
     data = h5py.File(feats_name, 'r')
     data_dict = dict()
     for fname, feat in zip(data['filenames'], data['features']):
-        data_dict[fname] = feat
+        # Added decode to solve the numpy.bytes error
+        data_dict[fname.decode('UTF-8')] = feat
 
     if model_type == 'inception':
         model = inception(512, 512, 2480, batch_first=True, dropout=0.7)
@@ -188,14 +199,16 @@ def main(model_name, model_type, feats_name, img_savepath, query_file, vocab_fil
     data_dict['zeros'] = np.zeros_like(data['features'][0])
     zero_idx = list(data_dict.keys()).index('zeros')
 
-    answers_feats = torch.from_numpy(np.array(data_dict.values()))
+    answers_feats = torch.from_numpy(np.array(list(data_dict.values())))
     answers_feats = torch.nn.functional.normalize(answers_feats, p=2, dim=1)
     if cuda:
         answers_feats = answers_feats.cuda()
 
     for nq, query in enumerate(queries):
         # Now, generate outfit for one image (forward and backward prediction until start/stop):
-        query_feats = torch.from_numpy(np.array([data_dict[q] for q in query['image_query']]))
+        #breakpoint()
+        # Modified key of query in question
+        query_feats = torch.from_numpy(np.array([data_dict[q] for q in query['question']]))
         query_feats = torch.nn.functional.normalize(query_feats, p=2, dim=1)
 
         if cuda:
@@ -208,16 +221,19 @@ def main(model_name, model_type, feats_name, img_savepath, query_file, vocab_fil
         backward_seq = run_backward_lstm(model, first_prod, answers_feats, data_dict, zero_idx, cuda)
 
         # Concatenate full sequence (forward + backward) generated by first product
-        first_sequence = backward_seq + [query['image_query'][0]] + forward_seq
+        # Modified key of query in question
+        first_sequence = backward_seq + [query['question'][0]] + forward_seq
         seq_feats = torch.from_numpy(np.array([data_dict[im] for im in first_sequence]))
         seq_feats = torch.nn.functional.normalize(seq_feats, p=2, dim=1)
         if cuda:
             seq_feats = seq_feats.cuda()
 
         # If there are more images, substitute the nearest one by the query and recompute:
-        if len(query['image_query']) >= 2:
+        # Modified key of query in question
+        if len(query['question']) >= 2:
             positions = [len(backward_seq)]  # Position of the first query in the sequence
-            for i, img in enumerate(query['image_query'][1:]):
+            # Modified key of query in question
+            for i, img in enumerate(query['question'][1:]):
                 # Find NN of the next item
                 dists = torch.mm(query_feats[i + 1].unsqueeze(0), seq_feats.permute(1, 0))
                 _, idx = torch.max(dists, 1)
@@ -228,13 +244,17 @@ def main(model_name, model_type, feats_name, img_savepath, query_file, vocab_fil
             if start_pos == positions[0]:
                 start_feats = query_feats[0].unsqueeze(0)
                 end_feats = query_feats[i + 1].unsqueeze(0)
-                start_item = query['image_query'][0]
-                end_item = query['image_query'][i + 1]
+                # Modified key of query in question
+                start_item = query['question'][0]
+                # Modified key of query in question
+                end_item = query['question'][i + 1]
             elif end_pos == positions[0]:
                 start_feats = query_feats[i + 1].unsqueeze(0)
                 end_feats = query_feats[0].unsqueeze(0)
-                start_item = query['image_query'][i + 1]
-                end_item = query['image_query'][0]
+                # Modified key of query in question
+                start_item = query['question'][i + 1]
+                # Modified key of query in question
+                end_item = query['question'][0]
 
             blanks = run_fill_lstm(model, start_feats, end_feats, end_pos - start_pos - 1,
                                  answers_feats, data_dict, zero_idx, cuda)
@@ -251,8 +271,9 @@ def main(model_name, model_type, feats_name, img_savepath, query_file, vocab_fil
             positions = [len(backward_seq), len(sets) - len(forward_seq) - 1]
 
         else:
-            sets = backward_seq + query['image_query'] + forward_seq
-
+            # Modified key of query in question
+            sets = backward_seq + query['question'] + forward_seq
+        '''
         if len(query['text_query']):
             text_query = txt_norm(query['text_query'])
             texts = torch.stack([get_one_hot(word, vocab) for word in text_query.split()])
@@ -267,9 +288,10 @@ def main(model_name, model_type, feats_name, img_savepath, query_file, vocab_fil
             for i, j in enumerate(sets):
                 if j not in query['image_query']:
                     sets_text[i] = nn_search(j, text_query_feat, data_dict, answers_feats, cuda)
+        '''
 
         create_img_outfit(sets, positions, os.path.join(img_savepath, "%d.jpg" % nq))
-        create_img_outfit(sets_text, positions, os.path.join(img_savepath, "%d_%s.jpg" % (nq, text_query)))
+        #create_img_outfit(sets_text, positions, os.path.join(img_savepath, "%d_%s.jpg" % (nq, text_query)))
 
 
 if __name__ == '__main__':

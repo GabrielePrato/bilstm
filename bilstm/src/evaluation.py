@@ -43,7 +43,7 @@ class Evaluation(object):
         self.model_type = model_type
         if model_type == 'inception':
             IMG_TRF = ImageTransforms(299)
-            self.trf = lambda x: IMG_TRF.resize(x)
+            self.trf = lambda x: torchvision.transforms.ToTensor()(IMG_TRF.resize(x))
         elif model_type == 'vgg':
             TRF = torchvision.transforms.Normalize(mean=[0.485, 0.456, 0.406],std=[0.229, 0.224, 0.225])
             IMG_TRF = ImageTransforms(224)
