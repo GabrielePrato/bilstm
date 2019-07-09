@@ -14,7 +14,7 @@ from losses import LSTMLosses
 from utils import ImageTransforms
 import torchvision
 from sklearn import metrics
-from wevision.transforms import padding as pad
+#from wevision.transforms import padding as pad
 
 
 # Disable superfluous-parens warning for python 3.
@@ -132,7 +132,7 @@ class Evaluation(object):
         # Disable complaints about no-member in torch
         # pylint: disable=E1101
         for img in img_data:
-            images = torch.cat((images, self.trf(img).unsqueeze(0)))
+            images = torch.cat((images, torchvision.transforms.ToTensor()(self.trf(img)).unsqueeze(0)))
         # pylint: enable=E1101
         images = torch.autograd.Variable(images)
         if self.cuda:
